@@ -1,0 +1,173 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.sql.*;
+import java.util.Vector;
+
+public class InstagramClone extends JFrame {
+    private static Connection conn;
+    private String currentUser;
+
+    // UI Components
+    private JTextArea postInput;
+    private DefaultListModel<String> postListModel;
+    private JList<String> postList;
+    private Vector<Integer> postIds;
+
+    public InstagramClone() {
+        loginScreen();
+    }
+
+    // Database Connection
+    private static Connection getConnection() throws SQLException {
+        if (conn == null || conn.isClosed()) {
+            conn = DriverManager.getConnection(
+                    "jdbc:mysql://localhost:3306/instagram_clone", "root", "your_password_here"
+            );
+        }
+        return conn;
+    }
+
+    private void loginScreen() {
+        JFrame loginFrame = new JFrame("Instagram Login");
+        loginFrame.setSize(300, 150);
+        loginFrame.setLayout(new GridLayout(3, 2));
+
+        JTextField usernameField = new JTextField();
+        JPasswordField passwordField = new JPasswordField();
+
+        loginFrame.add(new JLabel("Username:"));
+        loginFrame.add(usernameField);
+        loginFrame.add(new JLabel("Password:"));
+        loginFrame.add(passwordField);
+
+        JButton loginBtn = new JButton("Login");
+        loginFrame.add(loginBtn);
+
+        loginBtn.addActionListener(e -> {
+            try {
+                String user = usernameField.getText();
+                String pass = new String(passwordField.getPassword());
+                Connection conn = getConnection();
+                PreparedStatement stmt = conn.prepareStatement(
+                        "SELECT * FROM users WHERE username=? AND password=?"
+                );
+                stmt.setString(1, user);
+                stmt.setString(2, pass);
+                ResultSet rs = stmt.executeQuery();
+
+                if (rs.next()) {
+                    currentUser = user;
+                    loginFrame.dispose();
+                    showFeed();
+                } else {
+                    JOptionPane.showMessageDialog(loginFrame, "Invalid login!");
+                }
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+
+        loginFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        loginFrame.setVisible(true);
+    }
+
+    private void showFeed() {
+        setTitle("Instagram Clone - " + currentUser);
+        setSize(400, 600);
+        setLayout(new BorderLayout());
+
+        postListModel = new DefaultListModel<>();
+        postList = new JList<>(postListModel);
+        postIds = new Vector<>();
+
+        JScrollPane scrollPane = new JScrollPane(postList);
+        add(scrollPane, BorderLayout.CENTER);
+
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        postInput = new JTextArea(2, 20);
+        JButton postBtn = new JButton("Post");
+
+        bottomPanel.add(new JScrollPane(postInput), BorderLayout.CENTER);
+        bottomPanel.add(postBtn, BorderLayout.EAST);
+
+        postBtn.addActionListener(e -> postContent());
+
+        postList.addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent evt) {
+                if (evt.getClickCount() == 2) {
+                    int index = postList.getSelectedIndex();
+                    if (index != -1) likePost(postIds.get(index));
+                }
+            }
+        });
+
+        add(bottomPanel, BorderLayout.SOUTH);
+
+        loadFeed();
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setVisible(true);
+    }
+
+    private void postContent() {
+        try {
+            String content = postInput.getText().trim();
+            if (!content.isEmpty()) {
+                Connection conn = getConnection();
+                PreparedStatement stmt = conn.prepareStatement(
+                        "INSERT INTO posts(username, content, likes) VALUES (?, ?, 0)"
+                );
+                stmt.setString(1, currentUser);
+                stmt.setString(2, content);
+                stmt.executeUpdate();
+                postInput.setText("");
+                loadFeed();
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private void likePost(int postId) {
+        try {
+            Connection conn = getConnection();
+            PreparedStatement stmt = conn.prepareStatement(
+                    "UPDATE posts SET likes = likes + 1 WHERE id=?"
+            );
+            stmt.setInt(1, postId);
+            stmt.executeUpdate();
+            loadFeed();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadFeed() {
+        try {
+            postListModel.clear();
+            postIds.clear();
+
+            Connection conn = getConnection();
+            PreparedStatement stmt = conn.prepareStatement(
+                    "SELECT * FROM posts ORDER BY id DESC"
+            );
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                String user = rs.getString("username");
+                String content = rs.getString("content");
+                int likes = rs.getInt("likes");
+
+                postIds.add(id);
+                postListModel.addElement(user + ": " + content + " [" + likes + " likes]");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new InstagramClone());
+    }
+}
